@@ -44,7 +44,7 @@ struct Light
 
 // Matches Unity Vanilla HINT_NICE_QUALITY attenuation
 // Attenuation smoothly decreases to light range.
-float DistanceAttenuation(float distanceSqr, half2 distanceAttenuation)
+float _DistanceAttenuation(float distanceSqr, half2 distanceAttenuation)
 {
     // We use a shared distance attenuation for additional directional and puctual lights
     // for directional lights attenuation will be 1
@@ -57,6 +57,17 @@ float DistanceAttenuation(float distanceSqr, half2 distanceAttenuation)
     smoothFactor = smoothFactor * smoothFactor;
 
     return lightAtten * smoothFactor;
+}
+
+// from https://discussions.unity.com/t/custom-dynamic-lighting-attenuation/941456
+float DistanceAttenuation(float distanceSqr, float2 distanceAndSpotAttenuation)
+{
+    float distance = sqrt(distanceSqr);
+    
+    float range = rsqrt(distanceAndSpotAttenuation.x);
+    float distance01 = saturate(1 - (distance / range));
+    float lightAtten = pow(distance01, 2);
+    return lightAtten;
 }
 
 half AngleAttenuation(half3 spotDirection, half3 lightDirection, half2 spotAttenuation)
