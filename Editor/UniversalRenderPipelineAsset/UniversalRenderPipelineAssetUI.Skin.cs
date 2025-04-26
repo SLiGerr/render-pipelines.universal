@@ -49,7 +49,7 @@ namespace UnityEditor.Rendering.Universal
 
             // Main light
             public static GUIContent mainLightRenderingModeText = EditorGUIUtility.TrTextContent("Main Light", "Main light is the brightest directional light.");
-            public static GUIContent supportsMainLightShadowsText = EditorGUIUtility.TrTextContent("Cast Shadows", "If enabled the main light can be a shadow casting light.");
+            public static GUIContent supportsMainLightShadowsText = EditorGUIUtility.TrTextContent("Cast Shadows", "If enabled, the main light can be a shadow casting light.");
             public static GUIContent mainLightShadowmapResolutionText = EditorGUIUtility.TrTextContent("Shadow Resolution", "Resolution of the main light shadowmap texture. If cascades are enabled, cascades will be packed into an atlas and this setting controls the maximum shadows atlas resolution.");
 
             // Probe volumes
@@ -65,7 +65,7 @@ namespace UnityEditor.Rendering.Universal
             // Additional lights
             public static GUIContent addditionalLightsRenderingModeText = EditorGUIUtility.TrTextContent("Additional Lights", "Additional lights support.");
             public static GUIContent perObjectLimit = EditorGUIUtility.TrTextContent("Per Object Limit", "Maximum amount of additional lights. These lights are sorted and culled per-object.");
-            public static GUIContent supportsAdditionalShadowsText = EditorGUIUtility.TrTextContent("Cast Shadows", "If enabled shadows will be supported for spot lights.\n");
+            public static GUIContent supportsAdditionalShadowsText = EditorGUIUtility.TrTextContent("Cast Shadows", "If enabled, shadows will be supported for spot and point lights.");
             public static GUIContent additionalLightsShadowmapResolution = EditorGUIUtility.TrTextContent("Shadow Atlas Resolution", "All additional lights are packed into a single shadowmap atlas. This setting controls the atlas size.");
             public static GUIContent additionalLightsShadowResolutionTiers = EditorGUIUtility.TrTextContent("Shadow Resolution Tiers", $"Additional Lights Shadow Resolution Tiers. Rounded to the next power of two, and clamped to be at least {UniversalAdditionalLightData.AdditionalLightsShadowMinimumResolution}.");
             public static GUIContent[] additionalLightsShadowResolutionTierNames =
@@ -80,7 +80,9 @@ namespace UnityEditor.Rendering.Universal
             // Reflection Probes
             public static GUIContent reflectionProbesSettingsText = EditorGUIUtility.TrTextContent("Reflection Probes");
             public static GUIContent reflectionProbeBlendingText = EditorGUIUtility.TrTextContent("Probe Blending", "If enabled smooth transitions will be created between reflection probes.");
+            public static GUIContent reflectionProbeAtlasText = EditorGUIUtility.TrTextContent("Probe Atlas Blending", "If enabled, reflection probes will be added to the Forward Plus data grid and combined into a single atlas texture. The atlas is used by default when both Forward Plus and the GPU Resident Drawer are used.");
             public static GUIContent reflectionProbeBoxProjectionText = EditorGUIUtility.TrTextContent("Box Projection", "If enabled reflections appear based on the object’s position within the probe’s box, while still using a single probe as the source of the reflection.");
+            public static GUIContent reflectionProbeAtlasGpuResidentDrawerWarningText = EditorGUIUtility.TrTextContent("The Probe Atlas Blending is used by default when both Forward Plus and the GPU Resident Drawer are used.");
 
             // Additional lighting settings
             public static GUIContent mixedLightingSupportLabel = EditorGUIUtility.TrTextContent("Mixed Lighting", "Makes the render pipeline include mixed-lighting Shader Variants in the build.");
@@ -124,7 +126,7 @@ namespace UnityEditor.Rendering.Universal
             public static System.Lazy<GUIStyle> volumeProfileContextMenuStyle = new(() => new GUIStyle(CoreEditorStyles.contextMenuStyle) { margin = new RectOffset(0, 1, 3, 0) });
 
             // GPU Resident Drawer
-            public static GUIContent gpuResidentDrawerMode = EditorGUIUtility.TrTextContent("GPU Resident Drawer", "Enables draw submission through the GPU Resident Drawer, which can improve CPU performance");
+            public static GUIContent gpuResidentDrawerMode = EditorGUIUtility.TrTextContent("GPU Resident Drawer", "Enables draw submission through the GPU Resident Drawer, which can improve CPU performance.");
             public static GUIContent smallMeshScreenPercentage = EditorGUIUtility.TrTextContent("Small-Mesh Screen-Percentage", "Default minimum screen percentage (0-20%) gpu-driven Renderers can cover before getting culled. If a Renderer is part of a LODGroup, this will be ignored.");
             public static GUIContent gpuResidentDrawerEnableOcclusionCullingInCameras = EditorGUIUtility.TrTextContent("GPU Occlusion Culling", "Enables GPU occlusion culling in Game and SceneView cameras.");
 
@@ -149,9 +151,11 @@ namespace UnityEditor.Rendering.Universal
             public static GUIContent staticBatchingInfoMessage =
                 EditorGUIUtility.TrTextContent("Static Batching is not recommended when using GPU draw submission modes, performance may improve if Static Batching is disabled in Player Settings.");
             public static GUIContent lightModeErrorMessage =
-                EditorGUIUtility.TrTextContent("Rendering Path must be set to Forward+ for correct lighting and reflections. One or more entries in the RendererList are not set to this mode.");
+                EditorGUIUtility.TrTextContent("Rendering Path must be set to Forward+ or Deferred+ for correct lighting and reflections. One or more entries in the RendererList are not set to this mode.");
             public static GUIContent renderGraphNotEnabledErrorMessage =
                 EditorGUIUtility.TrTextContent("Render Graph must be enabled to use occlusion culling.");
+            public static GUIContent stencilLodCrossFadeWarningMessage =
+                EditorGUIUtility.TrTextContent("LOD Cross Fade with stencil dithering is not compatible with stencil override in Renderer.");
 
             // Dropdown menu options
             public static string[] mainLightOptions = { "Disabled", "Per Pixel" };

@@ -1,19 +1,45 @@
-#if ENABLE_VR && ENABLE_XR_MODULE
 using System;
 
 namespace UnityEngine.Rendering.Universal
 {
     /// <summary>
-    /// Class containing shader resources needed in URP for XR.
+    /// A resource container for textures used for <see cref="UniversalRenderPipeline"/>.
     /// </summary>
-    /// <seealso cref="Shader"/>
+    /// <remarks>
+    /// You cannot edit these resources through the editor's UI; use the API for advanced changes.
+    /// Changing this through the API is only allowed in the Editor. In the Player, this raises an error.
+    /// 
+    /// This container is removed for non-XR builds.
+    /// </remarks>
+    /// <seealso cref="IRenderPipelineResources"/>
+    /// <example>
+    /// <para> Here is an example of how to get the MotionVector shader used by URP for XR. </para>
+    /// <code>
+    /// using UnityEngine.Rendering;
+    /// using UnityEngine.Rendering.Universal;
+    /// 
+    /// public static class URPUniversalRendererRuntimeXRResourcesHelper
+    /// {
+    ///     public static Shader motionVector
+    ///     {
+    ///         get
+    ///         {
+    ///             var gs = GraphicsSettings.GetRenderPipelineSettings&lt;UniversalRenderPipelineRuntimeXRResources&gt;();
+    ///             if (gs == null) //not in URP or XR not enabled
+    ///                 return null;
+    ///             return gs.xrMotionVector;
+    ///         }
+    ///     }
+    /// }
+    /// </code>
+    /// </example>
     [Serializable]
     [SupportedOnRenderPipeline(typeof(UniversalRenderPipelineAsset))]
     [Categorization.CategoryInfo(Name = "R: Runtime XR", Order = 1000), HideInInspector]
     public class UniversalRenderPipelineRuntimeXRResources : IRenderPipelineResources
     {
         /// <summary>
-        /// Version of the XR Resources
+        /// Current version of the resource container. Used only for upgrading a project.
         /// </summary>
         public int version => 0;
 
@@ -34,7 +60,7 @@ namespace UnityEngine.Rendering.Universal
 
         [SerializeField]
         [ResourcePath("Shaders/XR/XRMirrorView.shader")]
-        public Shader m_xrMirrorViewPS;
+        private Shader m_xrMirrorViewPS;
 
         /// <summary>
         /// XR Mirror View shader.
@@ -47,7 +73,7 @@ namespace UnityEngine.Rendering.Universal
 
         [SerializeField]
         [ResourcePath("Shaders/XR/XRMotionVector.shader")]
-        public Shader m_xrMotionVector;
+        private Shader m_xrMotionVector;
 
         /// <summary>
         /// XR MotionVector shader.
@@ -76,4 +102,3 @@ namespace UnityEngine.Rendering.Universal
         }
     }
 }
-#endif

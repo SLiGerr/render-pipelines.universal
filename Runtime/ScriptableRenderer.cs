@@ -258,6 +258,15 @@ namespace UnityEngine.Rendering.Universal
             float cameraWidth = (float)camera.pixelWidth;
             float cameraHeight = (float)camera.pixelHeight;
 
+            // Overlay cameras don't have a viewport. Must use the computed/inherited viewport instead of the camera one.
+            if (cameraData.renderType == CameraRenderType.Overlay)
+            {
+                // Overlay cameras inherits viewport from base.
+                // pixelRect/Width/Height is the viewport in pixels.
+                cameraWidth = cameraData.pixelWidth;
+                cameraHeight = cameraData.pixelHeight;
+            }
+
             // Use eye texture's width and height as screen params when XR is enabled
             if (cameraData.xr.enabled)
             {
@@ -269,8 +278,19 @@ namespace UnityEngine.Rendering.Universal
 
             if (camera.allowDynamicResolution)
             {
+#if ENABLE_VR && ENABLE_XR_MODULE
+                // Use eye texture's scaled width and height as screen params when XR is enabled
+                if (cameraData.xr.enabled)
+                {
+                    scaledCameraTargetWidth = (float)cameraData.xr.renderTargetScaledWidth;
+                    scaledCameraTargetHeight = (float)cameraData.xr.renderTargetScaledHeight;
+                }
+                else
+#endif
+                {
                 scaledCameraTargetWidth *= ScalableBufferManager.widthScaleFactor;
                 scaledCameraTargetHeight *= ScalableBufferManager.heightScaleFactor;
+                }
             }
 
             float near = camera.nearClipPlane;
@@ -955,6 +975,8 @@ namespace UnityEngine.Rendering.Universal
         private class DrawGizmosPassData
         {
             public RendererListHandle gizmoRenderList;
+            public TextureHandle color;
+            public TextureHandle depth;
         };
 
         /// <summary>
@@ -972,20 +994,25 @@ namespace UnityEngine.Rendering.Universal
             if (!Handles.ShouldRenderGizmos() || cameraData.camera.sceneViewFilterMode == Camera.SceneViewFilterMode.ShowFiltered)
                 return;
 
-            using (var builder = renderGraph.AddRasterRenderPass<DrawGizmosPassData>("Draw Gizmos Pass", out var passData,
+            // We cannot draw gizmo rendererlists from an raster pass as the gizmo rendering triggers the  MonoBehaviour.OnDrawGizmos or MonoBehaviour.OnDrawGizmosSelected callbacks that could run arbitrary graphics code
+            // like SetRenderTarget, texture and resource loading, ...
+            using (var builder = renderGraph.AddUnsafePass<DrawGizmosPassData>("Draw Gizmos Pass", out var passData,
                 Profiling.drawGizmos))
             {
-                builder.SetRenderAttachment(color, 0, AccessFlags.Write);
-                builder.SetRenderAttachmentDepth(depth, AccessFlags.ReadWrite);
+                builder.UseTexture(color, AccessFlags.Write);
+                builder.UseTexture(depth, AccessFlags.ReadWrite);
 
                 passData.gizmoRenderList = renderGraph.CreateGizmoRendererList(cameraData.camera, gizmoSubset);
+                passData.color = color;
+                passData.depth = depth;
                 builder.UseRendererList(passData.gizmoRenderList);
                 builder.AllowPassCulling(false);
 
-                builder.SetRenderFunc((DrawGizmosPassData data, RasterGraphContext rgContext) =>
+                builder.SetRenderFunc((DrawGizmosPassData data, UnsafeGraphContext rgContext) =>
                 {
                     using (new ProfilingScope(rgContext.cmd, Profiling.drawGizmos))
                     {
+                        rgContext.cmd.SetRenderTarget(data.color, data.depth);
                         rgContext.cmd.DrawRendererList(data.gizmoRenderList);
                     }
                 });
@@ -1633,10 +1660,12 @@ namespace UnityEngine.Rendering.Universal
             cmd.SetKeyword(ShaderGlobalKeywords.MainLightShadowCascades, false);
             cmd.SetKeyword(ShaderGlobalKeywords.AdditionalLightsVertex, false);
             cmd.SetKeyword(ShaderGlobalKeywords.AdditionalLightsPixel, false);
-            cmd.SetKeyword(ShaderGlobalKeywords.ForwardPlus, false);
+            cmd.SetKeyword(ShaderGlobalKeywords.ClusterLightLoop, false);
+            cmd.SetKeyword(ShaderGlobalKeywords.ForwardPlus, false); // Backward compatibility. Deprecated in 6.1.
             cmd.SetKeyword(ShaderGlobalKeywords.AdditionalLightShadows, false);
             cmd.SetKeyword(ShaderGlobalKeywords.ReflectionProbeBlending, false);
             cmd.SetKeyword(ShaderGlobalKeywords.ReflectionProbeBoxProjection, false);
+            cmd.SetKeyword(ShaderGlobalKeywords.ReflectionProbeAtlas, false);
             cmd.SetKeyword(ShaderGlobalKeywords.SoftShadows, false);
             cmd.SetKeyword(ShaderGlobalKeywords.SoftShadowsLow, false);
             cmd.SetKeyword(ShaderGlobalKeywords.SoftShadowsMedium, false);
@@ -2260,29 +2289,26 @@ namespace UnityEngine.Rendering.Universal
 
         private protected int AdjustAndGetScreenMSAASamples(RenderGraph renderGraph, bool useIntermediateColorTarget)
         {
-            #if UNITY_EDITOR
-                // In the editor, the system render target is always allocated with no msaa
-                // See: ConfigureTargetTexture in PlayModeView.cs
-                return 1;
-            #else
-                // In the players, when URP main rendering is done to an intermediate target and NRP enabled
-                // we disable multisampling for the system backbuffer as a bandwidth optimization
-                // doing so, we avoid storing costly msaa samples back to system memory for nothing
-                bool canOptimizeScreenMSAASamples = UniversalRenderPipeline.canOptimizeScreenMSAASamples
-                                                 && useIntermediateColorTarget
-                                                 && renderGraph.nativeRenderPassesEnabled
-                                                 && Screen.msaaSamples > 1;
-                
-                if (canOptimizeScreenMSAASamples)
-                {
-                    Screen.SetMSAASamples(1);
-                }
+            // In the editor (ConfigureTargetTexture in PlayModeView.cs) and many platforms, the system render target is always allocated without MSAA    
+            if (!SystemInfo.supportsMultisampledBackBuffer) return 1;
 
-                // iOS and macOS corner case
-                bool screenAPIHasOneFrameDelay = (Application.platform == RuntimePlatform.OSXPlayer || Application.platform == RuntimePlatform.IPhonePlayer);
+            // For mobile platforms, when URP main rendering is done to an intermediate target and NRP enabled
+            // we disable multisampling for the system render target as a bandwidth optimization
+            // doing so, we avoid storing costly MSAA samples back to system memory for nothing
+            bool canOptimizeScreenMSAASamples = UniversalRenderPipeline.canOptimizeScreenMSAASamples
+                                                && useIntermediateColorTarget
+                                                && renderGraph.nativeRenderPassesEnabled
+                                                && Screen.msaaSamples > 1;
+            
+            if (canOptimizeScreenMSAASamples)
+            {
+                Screen.SetMSAASamples(1);
+            }
 
-                return screenAPIHasOneFrameDelay ? Mathf.Max(UniversalRenderPipeline.startFrameScreenMSAASamples, 1) : Mathf.Max(Screen.msaaSamples, 1);
-            #endif
+            // iOS and macOS corner case
+            bool screenAPIHasOneFrameDelay = (Application.platform == RuntimePlatform.OSXPlayer || Application.platform == RuntimePlatform.IPhonePlayer);
+
+            return screenAPIHasOneFrameDelay ? Mathf.Max(UniversalRenderPipeline.startFrameScreenMSAASamples, 1) : Mathf.Max(Screen.msaaSamples, 1);
         }
 
         internal static void SortStable(List<ScriptableRenderPass> list)

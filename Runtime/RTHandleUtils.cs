@@ -26,7 +26,7 @@ namespace UnityEngine.Rendering.Universal
         protected static int s_StaleResourceMaxCapacity = 32;
 
         /// <summary>
-        /// Controls the resource pool's max stale resource capacity. 
+        /// Controls the resource pool's max stale resource capacity.
         /// Increasing the capacity may have a negative impact on the memory usage.
         /// Increasing the capacity may reduce the runtime RTHandle realloc cost in multi view/multi camera setup.
         /// Setting capacity will purge the current pool. It is recommended to setup the capacity upfront and not changing it during the runtime.
@@ -83,7 +83,7 @@ namespace UnityEngine.Rendering.Universal
             return false;
         }
 
-        // Release all resources in pool. 
+        // Release all resources in pool.
         internal void Cleanup()
         {
             foreach (var kvp in m_ResourcePool)
@@ -177,9 +177,6 @@ namespace UnityEngine.Rendering.Universal
             TextureSizeMode textureSizeMode = TextureSizeMode.Explicit, int anisoLevel = 1, float mipMapBias = 0,
             FilterMode filterMode = FilterMode.Point, TextureWrapMode wrapMode = TextureWrapMode.Clamp, string name = "")
         {            
-            Assertions.Assert.IsFalse(desc.graphicsFormat != GraphicsFormat.None && desc.depthStencilFormat != GraphicsFormat.None,
-                "The RenderTextureDescriptor used to create a TextureDesc contains both graphicsFormat and depthStencilFormat which is not allowed.");
-            
             var format = (desc.depthStencilFormat != GraphicsFormat.None) ? desc.depthStencilFormat : desc.graphicsFormat;
 
             TextureDesc rgDesc = new TextureDesc(desc.width, desc.height);
@@ -201,6 +198,7 @@ namespace UnityEngine.Rendering.Universal
             rgDesc.memoryless = RenderTextureMemoryless.None;
             rgDesc.vrUsage = VRTextureUsage.None;
             rgDesc.name = name;
+            rgDesc.enableShadingRate = desc.enableShadingRate;
 
             return rgDesc;
         }

@@ -1279,8 +1279,8 @@ namespace UnityEngine.Rendering.Universal
         {
             var downsample = (int) m_LensFlareScreenSpace.resolution.value;
 
-            int width = m_Descriptor.width / downsample;
-            int height = m_Descriptor.height / downsample;
+            int width = Math.Max(m_Descriptor.width / downsample, 1);
+            int height = Math.Max(m_Descriptor.height / downsample, 1);
 
             var streakTextureDesc = GetCompatibleDescriptor(m_Descriptor, width, height, m_DefaultColorFormat);
             var streakTmpTexture = UniversalRenderer.CreateRenderGraphTexture(renderGraph, streakTextureDesc, "_StreakTmpTexture", true, FilterMode.Bilinear);
@@ -1361,7 +1361,7 @@ namespace UnityEngine.Rendering.Universal
 
 #endregion
 
-        static private void ScaleViewportAndBlit(RasterCommandBuffer cmd, RTHandle sourceTextureHdl, RTHandle dest, UniversalCameraData cameraData, Material material)
+        static private void ScaleViewportAndBlit(RasterCommandBuffer cmd, RTHandle sourceTextureHdl, RTHandle dest, UniversalCameraData cameraData, Material material, bool hasFinalPass)
         {
             Vector4 scaleBias = RenderingUtils.GetFinalBlitScaleBias(sourceTextureHdl, dest, cameraData);
             RenderTargetIdentifier cameraTarget = BuiltinRenderTextureType.CameraTarget;
@@ -1370,7 +1370,30 @@ namespace UnityEngine.Rendering.Universal
                 cameraTarget = cameraData.xr.renderTarget;
         #endif
             if (dest.nameID == cameraTarget || cameraData.targetTexture != null)
-                cmd.SetViewport(cameraData.pixelRect);
+            {
+                if (hasFinalPass || !cameraData.resolveFinalTarget)
+                {
+                    // Inside the camera stack the target is the shared intermediate target, which can be scaled with render scale.
+                    // camera.pixelRect is the viewport of the final target in pixels, so it cannot be used for the intermediate target.
+                    // On intermediate target allocation the viewport size is baked into the target size.
+                    // Which means the intermediate target does not have a viewport rect. Its offset is always 0 and its size matches viewport size.
+                    // The overlay cameras inherit the base viewport, so they cannot have a different viewport,
+                    // a necessary limitation since the target covers only the base viewport area.
+                    // The offsetting is finally done by the final output viewport-rect to the final target.
+                    // Note: effectively this is setting a fullscreen viewport for the intermediate target.
+                    var targetWidth = cameraData.cameraTargetDescriptor.width;
+                    var targetHeight = cameraData.cameraTargetDescriptor.height;
+                    var targetViewportInPixels = new Rect(
+                        0,
+                        0,
+                        targetWidth,
+                        targetHeight);
+                    cmd.SetViewport(targetViewportInPixels);
+                }
+                else
+                    cmd.SetViewport(cameraData.pixelRect);
+            }
+
 
             Blitter.BlitTexture(cmd, sourceTextureHdl, scaleBias, material, 0);
         }
@@ -1418,7 +1441,8 @@ namespace UnityEngine.Rendering.Universal
 
                     PostProcessUtils.SetSourceSize(cmd, sourceTextureHdl);
 
-                    ScaleViewportAndBlit(context.cmd, sourceTextureHdl, data.destinationTexture, data.cameraData, data.material);
+                    bool hasFinalPass = true; // This is a pass just before final pass. Viewport must match intermediate target.
+                    ScaleViewportAndBlit(context.cmd, sourceTextureHdl, data.destinationTexture, data.cameraData, data.material, hasFinalPass);
                 });
                 return;
             }
@@ -1533,7 +1557,7 @@ namespace UnityEngine.Rendering.Universal
                 passData.material = m_Materials.finalPass;
                 passData.settings = settings;
 
-                if (settings.requireHDROutput && m_EnableColorEncodingIfNeeded)
+                if (settings.requireHDROutput && m_EnableColorEncodingIfNeeded && cameraData.rendersOverlayUI)
                     builder.UseTexture(overlayUITexture, AccessFlags.Read);
 
 #if ENABLE_VR && ENABLE_XR_MODULE
@@ -1675,6 +1699,7 @@ namespace UnityEngine.Rendering.Universal
             bool resolveToDebugScreen = debugHandler != null && debugHandler.WriteToDebugScreenTexture(cameraData.resolveFinalTarget);
             debugHandler?.UpdateShaderGlobalPropertiesForFinalValidationPass(renderGraph, cameraData, !m_HasFinalPass && !resolveToDebugScreen);
 
+            settings.resolveToDebugScreen = resolveToDebugScreen;
             settings.isAlphaOutputEnabled = cameraData.isAlphaOutputEnabled;
             settings.isFxaaEnabled = (cameraData.antialiasing == AntialiasingMode.FastApproximateAntialiasing);
             settings.isFsrEnabled = ((cameraData.imageScalingMode == ImageScalingMode.Upscaling) && (cameraData.upscalingFilter == ImageUpscalingFilter.FSR));
@@ -1788,6 +1813,7 @@ namespace UnityEngine.Rendering.Universal
             internal bool isHdrGrading;
             internal bool isBackbuffer;
             internal bool enableAlphaOutput;
+            internal bool hasFinalPass;
         }
 
         TextureHandle TryGetCachedUserLutTextureHandle(RenderGraph renderGraph)
@@ -1811,7 +1837,7 @@ namespace UnityEngine.Rendering.Universal
             return m_UserLut != null ? renderGraph.ImportTexture(m_UserLut) : TextureHandle.nullHandle;
         }
 
-        public void RenderUberPost(RenderGraph renderGraph, ContextContainer frameData, UniversalCameraData cameraData, UniversalPostProcessingData postProcessingData, in TextureHandle sourceTexture, in TextureHandle destTexture, in TextureHandle lutTexture, in TextureHandle overlayUITexture, bool requireHDROutput, bool enableAlphaOutput, bool resolveToDebugScreen)
+        public void RenderUberPost(RenderGraph renderGraph, ContextContainer frameData, UniversalCameraData cameraData, UniversalPostProcessingData postProcessingData, in TextureHandle sourceTexture, in TextureHandle destTexture, in TextureHandle lutTexture, in TextureHandle overlayUITexture, bool requireHDROutput, bool enableAlphaOutput, bool resolveToDebugScreen, bool hasFinalPass)
         {
             var material = m_Materials.uber;
             bool hdrGrading = postProcessingData.gradingMode == ColorGradingMode.HighDynamicRange;
@@ -1869,6 +1895,7 @@ namespace UnityEngine.Rendering.Universal
                 passData.toneMappingMode = m_Tonemapping.mode.value;
                 passData.isHdrGrading = hdrGrading;
                 passData.enableAlphaOutput = enableAlphaOutput;
+                passData.hasFinalPass = hasFinalPass;
 
                 builder.SetRenderFunc(static (UberPostPassData data, RasterGraphContext context) =>
                 {
@@ -1899,7 +1926,7 @@ namespace UnityEngine.Rendering.Universal
                     CoreUtils.SetKeyword(material, ShaderKeywordStrings._ENABLE_ALPHA_OUTPUT, data.enableAlphaOutput);
 
                     // Done with Uber, blit it
-                    ScaleViewportAndBlit(cmd, sourceTextureHdl, data.destinationTexture, data.cameraData, material);
+                    ScaleViewportAndBlit(cmd, sourceTextureHdl, data.destinationTexture, data.cameraData, material, data.hasFinalPass);
                 });
 
                 return;
@@ -1972,12 +1999,15 @@ namespace UnityEngine.Rendering.Universal
             // disable useTemporalAA if another feature is disabled) then we need to put it in CameraData::IsTemporalAAEnabled() as opposed
             // to tweaking the value here.
             bool useTemporalAA = cameraData.IsTemporalAAEnabled();
-            if (cameraData.antialiasing == AntialiasingMode.TemporalAntiAliasing && !useTemporalAA)
-                TemporalAA.ValidateAndWarn(cameraData);
 
-            // STP is only supported when TAA is enabled and all of its runtime requirements are met.
-            // See the comments for IsSTPEnabled() for more information.
-            bool useSTP = useTemporalAA && cameraData.IsSTPEnabled();
+            // STP is only enabled when TAA is enabled and all of its runtime requirements are met.
+            // Using IsSTPRequested() vs IsSTPEnabled() for perf reason here, as we already know TAA status
+            bool isSTPRequested = cameraData.IsSTPRequested();
+            bool useSTP = useTemporalAA && isSTPRequested;
+
+            // Warn users if TAA and STP are disabled despite being requested
+            if (!useTemporalAA && cameraData.IsTemporalAARequested())
+                TemporalAA.ValidateAndWarn(cameraData, isSTPRequested);
 
             using (var builder = renderGraph.AddRasterRenderPass<PostFXSetupPassData>("Setup PostFX passes", out var passData,
                 ProfilingSampler.Get(URPProfileId.RG_SetupPostFX)))
@@ -2102,7 +2132,7 @@ namespace UnityEngine.Rendering.Universal
                 DebugHandler debugHandler = GetActiveDebugHandler(cameraData);
                 debugHandler?.UpdateShaderGlobalPropertiesForFinalValidationPass(renderGraph, cameraData, !m_HasFinalPass && !resolveToDebugScreen);
 
-                RenderUberPost(renderGraph, frameData, cameraData, postProcessingData, in currentSource, in postProcessingTarget, in lutTexture, in overlayUITexture, requireHDROutput, enableAlphaOutput, resolveToDebugScreen);
+                RenderUberPost(renderGraph, frameData, cameraData, postProcessingData, in currentSource, in postProcessingTarget, in lutTexture, in overlayUITexture, requireHDROutput, enableAlphaOutput, resolveToDebugScreen, hasFinalPass);
             }
         }
     }

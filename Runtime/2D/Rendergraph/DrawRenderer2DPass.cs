@@ -95,7 +95,7 @@ namespace UnityEngine.Rendering.Universal
             {
                 using (var builder = graph.AddRasterRenderPass<SetGlobalPassData>(k_SetLightBlendTexture, out var passData, m_SetLightBlendTextureProfilingSampler))
                 {
-                    if (layerBatch.lightStats.useAnyLights)
+                    if (layerBatch.lightStats.useLights)
                     {
                         passData.lightTextures = universal2DResourceData.lightTextures[batchIndex];
                         for (var i = 0; i < passData.lightTextures.Length; i++)
@@ -120,7 +120,7 @@ namespace UnityEngine.Rendering.Universal
                 passData.blendStyleIndices = layerBatch.activeBlendStylesIndices;
                 passData.hdrEmulationScale = rendererData.hdrEmulationScale;
                 passData.isSceneLit = rendererData.lightCullResult.IsSceneLit();
-                passData.layerUseLights = layerBatch.lightStats.useAnyLights;
+                passData.layerUseLights = layerBatch.lightStats.useLights;
 
 #if UNITY_EDITOR
                 passData.isLitView = true;
@@ -184,7 +184,7 @@ namespace UnityEngine.Rendering.Universal
             if (isLitView)
 #endif
             {
-                if (layerBatch.lightStats.useAnyLights)
+                if (layerBatch.lightStats.useLights)
                 {
                     for (var i = 0; i < lightTextures.Length; i++)
                     {
@@ -194,7 +194,8 @@ namespace UnityEngine.Rendering.Universal
                 }
                 else if (rendererData.lightCullResult.IsSceneLit())
                 {
-                    builder.SetGlobalTextureAfterPass(graph.defaultResources.blackTexture, Shader.PropertyToID(RendererLighting.k_ShapeLightTextureIDs[0]));
+                    for (var i = 0; i < RendererLighting.k_ShapeLightTextureIDs.Length; i++)
+                        builder.SetGlobalTextureAfterPass(graph.defaultResources.blackTexture, Shader.PropertyToID(RendererLighting.k_ShapeLightTextureIDs[i]));
                 }
             }
         }
